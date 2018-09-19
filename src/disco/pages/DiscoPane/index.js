@@ -155,7 +155,7 @@ export class DiscoPaneBase extends React.Component {
         {this.renderFindMoreButton({ position: 'top' })}
 
         {results.map((item) => (
-          <AddonComponent addon={item} key={item.guid} />
+          <AddonComponent addon={item} heading={item.heading} key={item.guid} />
         ))}
 
         {this.renderFindMoreButton({ position: 'bottom' })}
