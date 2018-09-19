@@ -2,7 +2,7 @@ import * as React from 'react';
 import { oneLine } from 'common-tags';
 import { shallow } from 'enzyme';
 
-import { AddonBase, mapStateToProps } from 'disco/components/Addon';
+import Addon, { AddonBase, mapStateToProps } from 'disco/components/Addon';
 import { setInstallState } from 'core/actions/installations';
 import InstallButton from 'core/components/InstallButton';
 import AMInstallButton from 'core/components/AMInstallButton';
@@ -24,15 +24,16 @@ import {
   UNINSTALLED,
 } from 'core/constants';
 import { getErrorMessage } from 'core/utils/addons';
+import { createInternalAddon, getAddonByID } from 'core/reducers/addons';
 import AddonCompatibilityError from 'disco/components/AddonCompatibilityError';
-import { loadedAddons } from 'disco/pages/DiscoPane';
 import createStore from 'disco/store';
 import {
+  createContextWithFakeRouter,
   createFakeEvent,
   createFakeTracking,
   fakeI18n,
   getFakeConfig,
-  sampleUserAgentParsed,
+  shallowUntilTarget,
 } from 'tests/unit/helpers';
 import {
   dispatchClientMetadata,
@@ -45,38 +46,68 @@ import {
 import LoadingText from 'ui/components/LoadingText';
 import ThemeImage from 'ui/components/ThemeImage';
 
-function renderAddon(customProps = {}) {
-  const props = {
-    _getClientCompatibility: () => ({ compatible: true, reason: null }),
-    clientApp: CLIENT_APP_FIREFOX,
-    enable: sinon.stub(),
-    getBrowserThemeData: () => '{"theme":"data"}',
-    i18n: fakeI18n(),
-    installTheme: sinon.stub(),
-    setCurrentStatus: sinon.stub(),
-    status: UNINSTALLED,
-    uninstall: sinon.stub(),
-    userAgentInfo: sampleUserAgentParsed,
-    ...customProps,
-  };
-  return shallow(<AddonBase {...props} />);
-}
-
 describe(__filename, () => {
   let fakeEvent;
-  const _state = loadDiscoResultsIntoState([
-    {
-      heading: 'test-heading',
-      description: 'test-editorial-description',
-      addon: {
-        ...fakeDiscoAddon,
-        id: 'test-id',
-        type: ADDON_TYPE_EXTENSION,
-        slug: 'test-slug',
-      },
-    },
-  ]);
-  const result = loadedAddons(_state)[0];
+
+  function getProps({
+    addonProps,
+    heading = 'test-heading',
+    description = 'test-editorial-description',
+    ...customProps
+  } = {}) {
+    const { store } = createStore();
+
+    const addon = {
+      ...fakeDiscoAddon,
+      id: 'test-id',
+      type: ADDON_TYPE_EXTENSION,
+      slug: 'test-slug',
+      ...addonProps,
+    };
+
+    loadDiscoResultsIntoState(
+      [
+        {
+          addon,
+          description,
+          heading,
+        },
+      ],
+      { store },
+    );
+
+    const props = {
+      _getClientCompatibility: () => ({ compatible: true, reason: null }),
+      addonId: addon.id,
+      description,
+      getBrowserThemeData: () => '{"theme":"data"}',
+      heading,
+      i18n: fakeI18n(),
+      store,
+      ...customProps,
+    };
+
+    return props;
+  }
+
+  const renderAddon = (props = {}) => {
+    return shallowUntilTarget(<Addon {...getProps(props)} />, AddonBase, {
+      shallowOptions: createContextWithFakeRouter(),
+    });
+  };
+
+  const shallowRender = (props = {}) => {
+    const { addonId, i18n, store, ...otherProps } = getProps(props);
+
+    const addon = getAddonByID(store.getState(), addonId);
+    const allProps = {
+      ...otherProps,
+      addon,
+      i18n,
+    };
+
+    return shallow(<AddonBase {...allProps} />, { context: { i18n } });
+  };
 
   beforeEach(() => {
     fakeEvent = createFakeEvent();
@@ -84,12 +115,9 @@ describe(__filename, () => {
 
   it('renders okay without data', () => {
     const root = renderAddon({
-      addon: undefined,
+      addonId: undefined,
       description: undefined,
       heading: undefined,
-      id: undefined,
-      slug: undefined,
-      type: undefined,
     });
 
     expect(root.find(LoadingText)).toHaveLength(1);
@@ -102,7 +130,6 @@ describe(__filename, () => {
     const uninstall = sinon.stub();
 
     const root = renderAddon({
-      addon: { ...result },
       enable,
       install,
       installTheme,
@@ -118,33 +145,31 @@ describe(__filename, () => {
 
   describe('<Addon type="extension"/>', () => {
     it('renders a default error overlay with no close link', () => {
-      const root = renderAddon({
-        addon: result,
-        status: ERROR,
-      });
+      const root = shallowRender({ status: ERROR });
       const error = root.find('.notification.error');
+
       expect(error.find('.close')).toHaveLength(0);
     });
 
     it('renders a default error overlay with no close link for FATAL_ERROR', () => {
       const root = renderAddon({
-        addon: result,
         status: ERROR,
         setCurrentStatus: sinon.stub(),
         error: FATAL_ERROR,
       });
+
       const error = root.find('.notification.error');
       expect(error.find('.close')).toHaveLength(0);
     });
 
     it('renders a specific overlay with no close link for FATAL_INSTALL_ERROR', () => {
       const installError = FATAL_INSTALL_ERROR;
-      const root = renderAddon({
-        addon: result,
+      const root = shallowRender({
         status: ERROR,
         setCurrentStatus: sinon.stub(),
         error: installError,
       });
+
       const error = root.find('.notification.error');
       expect(error.find('p').html()).toContain(
         getErrorMessage({ i18n: fakeI18n(), error: installError }),
@@ -153,56 +178,58 @@ describe(__filename, () => {
     });
 
     it('renders a specific overlay with no close link for FATAL_UNINSTALL_ERROR', () => {
-      const root = renderAddon({
-        addon: result,
+      const root = shallowRender({
         status: ERROR,
         setCurrentStatus: sinon.stub(),
         error: FATAL_UNINSTALL_ERROR,
       });
+
       const error = root.find('.notification.error');
       expect(error.find('.close')).toHaveLength(0);
     });
 
     it('renders an install error overlay', () => {
       const setCurrentStatus = sinon.stub();
-      const root = renderAddon({
-        addon: result,
+      const root = shallowRender({
         status: ERROR,
         error: INSTALL_FAILED,
         setCurrentStatus,
       });
+
       const error = root.find('.notification.error');
+
       error.find('.close').simulate('click', fakeEvent);
       sinon.assert.called(setCurrentStatus);
     });
 
     it('renders an error overlay', () => {
       const setCurrentStatus = sinon.stub();
-      const root = renderAddon({
-        addon: result,
+
+      const root = shallowRender({
         status: ERROR,
         error: DOWNLOAD_FAILED,
         setCurrentStatus,
       });
+
       const error = root.find('.notification.error');
+
       error.find('.close').simulate('click', fakeEvent);
       sinon.assert.called(setCurrentStatus);
     });
 
     it('does not normally render an error', () => {
-      const root = renderAddon({ addon: result });
+      const root = renderAddon();
       expect(root.find('.notification.error')).toHaveLength(0);
     });
 
     it('renders the heading', () => {
-      const { heading, ...addon } = result;
-      const root = renderAddon({ addon, heading });
+      const root = renderAddon();
 
       expect(root.find('.heading').html()).toContain('test-heading');
     });
 
     it('renders the editorial description', () => {
-      const root = renderAddon({ addon: result });
+      const root = renderAddon();
 
       expect(root.find('.editorial-description').html()).toContain(
         'test-editorial-description',
@@ -213,7 +240,7 @@ describe(__filename, () => {
       const heading =
         '<script>alert("hi")</script><em>Hey!</em> <i>This is <span>an add-on</span></i>';
 
-      const root = renderAddon({ addon: result, heading });
+      const root = renderAddon({ heading });
 
       expect(root.find('.heading').html()).toContain(
         'Hey! This is <span>an add-on</span>',
@@ -224,7 +251,7 @@ describe(__filename, () => {
       const heading =
         'This is <span>an <a href="https://addons.mozilla.org">add-on</a>/span>';
 
-      const root = renderAddon({ addon: result, heading });
+      const root = renderAddon({ heading });
       const headingHtml = root.find('.heading').html();
 
       expect(headingHtml).toContain('rel="noopener noreferrer"');
@@ -235,7 +262,7 @@ describe(__filename, () => {
       const heading =
         'This is <span>an <a href="javascript:alert(1)">add-on</a>/span>';
 
-      const root = renderAddon({ addon: result, heading });
+      const root = renderAddon({ heading });
       const link = root.find('.heading');
 
       // Make sure there is an anchor tag.
@@ -245,13 +272,11 @@ describe(__filename, () => {
     });
 
     it('purifies the editorial description', () => {
-      const data = {
-        ...result,
-        description:
-          '<script>foo</script><blockquote>This is an add-on!</blockquote> ' +
-          '<i>Reviewed by <cite>a person</cite></i>',
-      };
-      const root = renderAddon({ addon: data });
+      const description =
+        '<script>foo</script><blockquote>This is an add-on!</blockquote> ' +
+        '<i>Reviewed by <cite>a person</cite></i>';
+
+      const root = renderAddon({ description });
 
       expect(root.find('.editorial-description').html()).toContain(
         '<blockquote>This is an add-on!</blockquote> Reviewed by <cite>a person</cite>',
@@ -259,11 +284,11 @@ describe(__filename, () => {
     });
 
     it('purifies an editorial description with a bad link', () => {
-      const data = {
-        ...result,
-        description: 'This is a <a href="javascript:alert(1)">description</a>',
-      };
-      const root = renderAddon({ addon: data });
+      const description =
+        'This is a <a href="javascript:alert(1)">description</a>';
+
+      const root = renderAddon({ description });
+
       expect(root.find('.editorial-description').html()).toContain(
         oneLine`<div class="editorial-description">This is a <a target="_blank"
           rel="noopener noreferrer">description</a></div>`,
@@ -271,11 +296,11 @@ describe(__filename, () => {
     });
 
     it('allows links in the editorial description', () => {
-      const data = {
-        ...result,
-        description: 'This is a <a href="https://mozilla.org/">description</a>',
-      };
-      const root = renderAddon({ addon: data });
+      const description =
+        'This is a <a href="https://mozilla.org/">description</a>';
+
+      const root = renderAddon({ description });
+
       expect(root.find('.editorial-description').html()).toContain(
         oneLine`<div class="editorial-description">This is a <a
           href="https://mozilla.org/" target="_blank"
@@ -284,48 +309,44 @@ describe(__filename, () => {
     });
 
     it('does render a logo for an extension', () => {
-      const { heading, ...addon } = result;
-      const root = renderAddon({ addon, heading });
+      const root = renderAddon();
 
       expect(root.find('.logo')).toHaveLength(1);
     });
 
     it("doesn't render a theme image for an extension", () => {
-      const { heading, ...addon } = result;
-      const root = renderAddon({ addon, heading });
+      const root = renderAddon();
 
       expect(root.find('.Addon-ThemeImage-link')).toHaveLength(0);
       expect(root.find(ThemeImage)).toHaveLength(0);
     });
 
     it('throws on invalid add-on type', () => {
-      const { heading, ...addon } = result;
-      const root = renderAddon({ addon, heading });
+      const addonProps = {
+        type: 'Whatever',
+      };
 
-      expect(root.find('.heading').html()).toContain('test-heading');
-
-      const data = { ...result, type: 'Whatever' };
       expect(() => {
-        renderAddon({ addon: data });
+        renderAddon({ addonProps });
       }).toThrowError('Invalid addon type');
     });
 
     it('tracks an add-on link click', () => {
       const fakeTracking = createFakeTracking();
-      const addon = {
-        ...result,
+      const addonProps = {
         name: 'foo',
         type: ADDON_TYPE_EXTENSION,
       };
-      const root = renderAddon({
-        addon,
+
+      const root = shallowRender({
+        addonProps,
         heading:
           'This is <span>an <a href="https://addons.mozilla.org">add-on</a>/span>',
         _tracking: fakeTracking,
       });
+
       const heading = root.find('.heading');
-      // We click the heading providing the link nodeName to emulate
-      // bubbling.
+      // We click the heading providing the link nodeName to emulate bubbling.
       heading.simulate(
         'click',
         createFakeEvent({
@@ -336,46 +357,46 @@ describe(__filename, () => {
       sinon.assert.calledWith(fakeTracking.sendEvent, {
         action: TRACKING_TYPE_EXTENSION,
         category: CLICK_CATEGORY,
-        label: addon.name,
+        label: addonProps.name,
       });
     });
 
     it('passes a defaultInstallSource to the install button', () => {
       const defaultInstallSource = 'fake-discopane-source';
       const addon = {
-        ...result,
+        ...fakeDiscoAddon,
         type: ADDON_TYPE_EXTENSION,
       };
-      const root = renderAddon({
-        addon,
-        ...addon,
+
+      const root = shallowRender({
+        addonProps: {
+          ...addon,
+        },
         defaultInstallSource,
       });
 
       const button = root.find(InstallButton);
+
       expect(button).toHaveLength(1);
-      expect(button).toHaveProp('addon', result.addon);
+      expect(button).toHaveProp('addon', createInternalAddon(addon));
       expect(button).toHaveProp('className', 'Addon-install-button');
       expect(button).toHaveProp('defaultInstallSource', defaultInstallSource);
     });
 
     it('disables incompatible add-ons', () => {
-      const { store } = createStore();
       const minVersion = '400000.0';
       const reason = 'WHATEVER';
+
       const root = renderAddon({
-        addon: {
-          ...result,
+        addonProps: {
           current_version: {},
         },
-        ...result,
         _getClientCompatibility: () => ({
           compatible: false,
           maxVersion: '4000000.0',
           minVersion,
           reason,
         }),
-        store,
       });
 
       const compatError = root.find(AddonCompatibilityError);
@@ -390,8 +411,7 @@ describe(__filename, () => {
       let root;
 
       beforeEach(() => {
-        const data = { ...result, type };
-        root = renderAddon({ addon: data });
+        root = renderAddon({ addonProps: { type } });
       });
 
       it("doesn't render the logo", () => {
@@ -406,9 +426,8 @@ describe(__filename, () => {
 
   describe('addon with type static theme', () => {
     const renderWithStaticTheme = (props = {}) => {
-      return renderAddon({
-        addon: {
-          ...fakeDiscoAddon,
+      return shallowRender({
+        addonProps: {
           type: ADDON_TYPE_STATIC_THEME,
         },
         enable: sinon.stub(),
@@ -493,14 +512,15 @@ describe(__filename, () => {
   });
 
   describe('addon with type lightweight theme', () => {
-    const renderWithLightweightTheme = (props = {}) => {
-      const addon = {
-        ...result,
-        type: ADDON_TYPE_THEME,
-        previews: [],
-      };
-
-      return renderAddon({ addon, ...props });
+    const renderWithLightweightTheme = ({ addonProps, ...props } = {}) => {
+      return shallowRender({
+        addonProps: {
+          type: ADDON_TYPE_THEME,
+          previews: [],
+          ...addonProps,
+        },
+        ...props,
+      });
     };
 
     it('renders a ThemeImage', () => {
@@ -510,15 +530,15 @@ describe(__filename, () => {
     });
 
     it('makes the ThemeImage clickable when add-on manager is available', () => {
-      const addon = {
-        ...result,
+      const addonProps = {
+        name: 'some name',
         type: ADDON_TYPE_THEME,
-        previews: [],
       };
+
       const installTheme = sinon.stub();
 
       const root = renderWithLightweightTheme({
-        addon,
+        addonProps,
         hasAddonManager: true,
         installTheme,
         status: UNINSTALLED,
@@ -536,9 +556,9 @@ describe(__filename, () => {
 
       sinon.assert.called(fakeEvent.preventDefault);
       sinon.assert.calledWith(installTheme, imageLink, {
-        name: addon.name,
+        name: addonProps.name,
         status: UNINSTALLED,
-        type: addon.type,
+        type: addonProps.type,
       });
     });
 
@@ -550,55 +570,10 @@ describe(__filename, () => {
     });
   });
 
-  describe('mapStateToProps', () => {
-    let store;
-
-    beforeEach(() => {
-      store = createStore().store;
-    });
-
-    it('pulls the installation data from the state', () => {
-      const clientApp = CLIENT_APP_FIREFOX;
-      dispatchClientMetadata({ store, clientApp });
-
-      const guid = 'foo@addon';
-      const addonId = 5432111;
-
-      const addon = {
-        ...fakeDiscoAddon,
-        guid,
-        id: addonId,
-      };
-
-      store.dispatch(
-        setInstallState({
-          ...fakeInstalledAddon,
-          status: ENABLED,
-          guid,
-        }),
-      );
-
-      const props = mapStateToProps(store.getState(), { addon });
-
-      expect(props).toMatchObject({
-        clientApp,
-        status: ENABLED,
-      });
-
-      const { userAgentInfo } = store.getState().api;
-      // Do a quick check to make sure we grabbed a real object.
-      expect(userAgentInfo).toBeTruthy();
-      // Use equality to check this prop since toMatchObject will get
-      // confused by the class instances in deep properties.
-      expect(props.userAgentInfo).toEqual(userAgentInfo);
-    });
-  });
-
   describe('AMInstallButton', () => {
     const renderWithAMInstallButton = (props = {}) => {
-      return renderAddon({
+      return shallowRender({
         _config: getFakeConfig({ enableAMInstallButton: true }),
-        addon: { ...result },
         hasAddonManager: true,
         ...props,
       });

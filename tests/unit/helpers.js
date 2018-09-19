@@ -115,20 +115,6 @@ export function fakeI18n({ lang = config.get('defaultLang') } = {}) {
   return makeI18n({}, lang, JedSpy);
 }
 
-export class MockedSubComponent extends React.Component {
-  render() {
-    return <div />;
-  }
-}
-
-export function assertHasClass(el, className) {
-  expect(el.classList.contains(className)).toBeTruthy();
-}
-
-export function assertNotHasClass(el, className) {
-  expect(el.classList.contains(className)).toBeFalsy();
-}
-
 export const userAgentsByPlatform = {
   android: {
     firefox40Mobile: oneLine`Mozilla/5.0 (Android; Mobile; rv:40.0)

@@ -1,37 +1,33 @@
-import { normalize } from 'normalizr';
-
-import { loadAddons } from 'core/reducers/addons';
+import { loadAddonResults } from 'core/reducers/addons';
 import { ADDON_TYPE_EXTENSION } from 'core/constants';
-import { discoResult } from 'disco/api';
-import { loadDiscoResults } from 'disco/reducers/discoResults';
+import {
+  createExternalAddonMap,
+  loadDiscoResults,
+} from 'disco/reducers/discoResults';
 import createStore from 'disco/store';
 import { fakeAddon } from 'tests/unit/amo/helpers';
 
 export function createFetchDiscoveryResult(results) {
-  // Simulate how getDiscoveryAddons() applies its schema.
-  return normalize({ results }, { results: [discoResult] });
+  return {
+    count: results.length,
+    results,
+  };
 }
 
 /*
- * This takes addonResults (as if returned from the API)
- * and loads them into state the same way the real app does.
- *
- * addonResults is an AddonResultType, like this:
- *
- *  type AddonResultType = {
- *    heading: string,
- *    description: string,
- *    addon: AddonType,
- *  };
- *  type AddonResultsType = Array<AddonResultType>;
+ * This takes addonResults (as if returned from the API) and loads them into
+ * state the same way the real app does.
  */
 export function loadDiscoResultsIntoState(
   addonResults,
   { store = createStore().store } = {},
 ) {
-  const { entities, result } = createFetchDiscoveryResult(addonResults);
-  store.dispatch(loadAddons(entities));
-  store.dispatch(loadDiscoResults({ entities, result }));
+  const { results } = createFetchDiscoveryResult(addonResults);
+  const addons = createExternalAddonMap({ results });
+
+  store.dispatch(loadAddonResults({ addons }));
+  store.dispatch(loadDiscoResults({ results }));
+
   return store.getState();
 }
 

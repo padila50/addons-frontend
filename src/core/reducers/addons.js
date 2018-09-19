@@ -12,7 +12,6 @@ import type {
   ExternalAddonType,
   ThemeData,
 } from 'core/types/addons';
-import type { ExternalDiscoAddonMap } from 'disco/reducers/discoResults';
 
 export const LOAD_ADDONS: 'LOAD_ADDONS' = 'LOAD_ADDONS';
 export const FETCH_ADDON: 'FETCH_ADDON' = 'FETCH_ADDON';
@@ -20,12 +19,12 @@ export const LOAD_ADDON_RESULTS: 'LOAD_ADDON_RESULTS' = 'LOAD_ADDON_RESULTS';
 
 type AddonID = number;
 
-type ExternalAddonMap = {
+export type ExternalAddonMap = {
   [addonSlug: string]: ExternalAddonType,
 };
 
 export type LoadAddonsAction = {|
-  payload: {| addons: ExternalAddonMap | ExternalDiscoAddonMap |},
+  payload: {| addons: ExternalAddonMap |},
   type: typeof LOAD_ADDONS,
 |};
 
@@ -228,7 +227,11 @@ export function createInternalAddon(apiAddon: ExternalAddonType): AddonType {
 
   const currentVersion = apiAddon.current_version;
 
-  if (currentVersion && currentVersion.files.length > 0) {
+  if (
+    currentVersion &&
+    currentVersion.files &&
+    currentVersion.files.length > 0
+  ) {
     currentVersion.files.forEach((file) => {
       // eslint-disable-next-line no-prototype-builtins
       // eslint-disable-next-line no-prototype-builtins

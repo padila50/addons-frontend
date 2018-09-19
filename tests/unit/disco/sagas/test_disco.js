@@ -1,9 +1,10 @@
 import SagaTester from 'redux-saga-tester';
 
-import addonsReducer, { loadAddons } from 'core/reducers/addons';
+import addonsReducer, { loadAddonResults } from 'core/reducers/addons';
 import apiReducer from 'core/reducers/api';
 import * as api from 'disco/api';
 import discoResultsReducer, {
+  createExternalAddonMap,
   getDiscoResults,
   loadDiscoResults,
 } from 'disco/reducers/discoResults';
@@ -78,18 +79,20 @@ describe(__filename, () => {
         })
         .returns(Promise.resolve(addonResponse));
 
-      const { entities, result } = addonResponse;
-      const expectedLoadAction = loadDiscoResults({ entities, result });
+      const { results } = addonResponse;
+      const expectedLoadAction = loadDiscoResults({ results });
 
       _getDiscoResults();
 
-      await sagaTester.waitFor(expectedLoadAction.type);
+      const action = await sagaTester.waitFor(expectedLoadAction.type);
       mockApi.verify();
+
+      expect(action).toEqual(expectedLoadAction);
 
       const calledActions = sagaTester.getCalledActions();
 
-      expect(calledActions[1]).toEqual(loadAddons(entities));
-      expect(calledActions[2]).toEqual(expectedLoadAction);
+      const addons = createExternalAddonMap({ results });
+      expect(calledActions[1]).toEqual(loadAddonResults({ addons }));
     });
 
     it('includes a telemetry client ID in the API request', async () => {
@@ -112,8 +115,8 @@ describe(__filename, () => {
         })
         .returns(Promise.resolve(addonResponse));
 
-      const { entities, result } = addonResponse;
-      const expectedLoadAction = loadDiscoResults({ entities, result });
+      const { results } = addonResponse;
+      const expectedLoadAction = loadDiscoResults({ results });
 
       _getDiscoResults({
         taarParams: {

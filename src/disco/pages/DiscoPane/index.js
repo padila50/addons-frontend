@@ -1,7 +1,7 @@
+/* @flow */
 /* global navigator */
 import invariant from 'invariant';
 import * as React from 'react';
-import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
 import { compose } from 'redux';
 import config from 'config';
@@ -12,42 +12,53 @@ import tracking from 'core/tracking';
 import { INSTALL_STATE } from 'core/constants';
 import InfoDialog from 'core/components/InfoDialog';
 import { addChangeListeners } from 'core/addonManager';
-import { getAddonByGUID } from 'core/reducers/addons';
 import { getDiscoResults } from 'disco/reducers/discoResults';
 import { NAVIGATION_CATEGORY } from 'disco/constants';
 import { makeQueryStringWithUTM } from 'disco/utils';
 import Addon from 'disco/components/Addon';
 import Button from 'ui/components/Button';
+import type { MozAddonManagerType } from 'core/addonManager';
+import type { ErrorHandlerType } from 'core/errorHandler';
+import type { I18nType } from 'core/types/i18n';
+import type { DispatchFunc } from 'core/types/redux';
+import type {
+  ReactRouterLocationType,
+  ReactRouterMatchType,
+} from 'core/types/router';
+import type { DiscoResultsType } from 'disco/reducers/discoResults';
+import type { AppState } from 'disco/store';
 
 import './styles.scss';
 
-export class DiscoPaneBase extends React.Component {
-  static propTypes = {
-    AddonComponent: PropTypes.func,
-    dispatch: PropTypes.func.isRequired,
-    errorHandler: PropTypes.object.isRequired,
-    handleGlobalEvent: PropTypes.func.isRequired,
-    i18n: PropTypes.object.isRequired,
-    location: PropTypes.object.isRequired,
-    mozAddonManager: PropTypes.object,
-    match: PropTypes.shape({
-      params: PropTypes.shape({
-        platform: PropTypes.string.isRequired,
-      }).isRequired,
-    }).isRequired,
-    results: PropTypes.arrayOf(PropTypes.object).isRequired,
-    _addChangeListeners: PropTypes.func,
-    _tracking: PropTypes.object,
-  };
+type Props = {|
+  location: ReactRouterLocationType,
+  match: {|
+    ...ReactRouterMatchType,
+    params: {| platform: string |},
+  |},
+|};
 
+type InternalProps = {|
+  ...Props,
+  _addChangeListeners: typeof addChangeListeners,
+  _tracking: typeof tracking,
+  dispatch: DispatchFunc,
+  errorHandler: ErrorHandlerType,
+  handleGlobalEvent: Function,
+  i18n: I18nType,
+  mozAddonManager: MozAddonManagerType,
+  results: DiscoResultsType,
+|};
+
+export class DiscoPaneBase extends React.Component<InternalProps> {
   static defaultProps = {
-    AddonComponent: Addon,
-    mozAddonManager: config.get('server') ? {} : navigator.mozAddonManager,
     _addChangeListeners: addChangeListeners,
     _tracking: tracking,
+    // $FLOW_FIXME: `mozAddonManager` might be available.
+    mozAddonManager: config.get('server') ? {} : navigator.mozAddonManager,
   };
 
-  constructor(props) {
+  constructor(props: InternalProps) {
     super(props);
 
     const {
@@ -98,7 +109,7 @@ export class DiscoPaneBase extends React.Component {
     });
   };
 
-  renderFindMoreButton({ position }) {
+  renderFindMoreButton({ position }: {| position: 'top' | 'bottom' |}) {
     const { i18n } = this.props;
 
     invariant(position, 'position is required');
@@ -124,16 +135,12 @@ export class DiscoPaneBase extends React.Component {
   }
 
   render() {
-    const { AddonComponent, errorHandler, results, i18n } = this.props;
+    const { errorHandler, results, i18n } = this.props;
 
     return (
-      <div
-        id="app-view"
-        ref={(ref) => {
-          this.container = ref;
-        }}
-      >
+      <div id="app-view">
         {errorHandler.renderErrorIfPresent()}
+
         <header>
           <div className="disco-header">
             <div className="disco-content">
@@ -155,44 +162,40 @@ export class DiscoPaneBase extends React.Component {
         {this.renderFindMoreButton({ position: 'top' })}
 
         {results.map((item) => (
-          <AddonComponent addon={item} heading={item.heading} key={item.guid} />
+          <Addon
+            addonId={item.addonId}
+            description={item.description}
+            heading={item.heading}
+            key={item.addonId}
+          />
         ))}
 
         {this.renderFindMoreButton({ position: 'bottom' })}
+
         <InfoDialog />
       </div>
     );
   }
 }
 
-export function loadedAddons(state) {
-  return state.discoResults.results.map((result) => {
-    return {
-      ...result,
-      // `result` comes from the API call in `src/disco/api.js` and
-      // normalizer makes everything complicated...
-      // `result.addon` is actually the add-on's GUID.
-      ...getAddonByGUID(state, result.addon),
-    };
-  });
-}
+export function mapStateToProps(state: AppState) {
+  const { results } = state.discoResults;
 
-export function mapStateToProps(state) {
   return {
-    results: loadedAddons(state),
+    results,
   };
 }
 
-export function mapDispatchToProps(dispatch) {
+export function mapDispatchToProps(dispatch: DispatchFunc) {
   return {
     dispatch,
-    handleGlobalEvent: (payload) => {
+    handleGlobalEvent: (payload: Object) => {
       dispatch({ type: INSTALL_STATE, payload });
     },
   };
 }
 
-export default compose(
+const DiscoPane: React.ComponentType<Props> = compose(
   withErrorHandler({ name: 'DiscoPane' }),
   connect(
     mapStateToProps,
@@ -200,3 +203,5 @@ export default compose(
   ),
   translate(),
 )(DiscoPaneBase);
+
+export default DiscoPane;
